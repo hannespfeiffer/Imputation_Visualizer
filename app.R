@@ -98,13 +98,22 @@ server <- function(input, output) {
   })
 
   output$info <- renderPrint({
+    print("Marked point:")
+    print(nearPoints(vals$data,input$plot1_click, 
+                                  xvar = "year", yvar="sunvalue",
+                                  threshold = 5, maxpoints = 1))
     print("Imputed Dataset:")
     print(vals$imputedDataSet)
 
   })
   
   output$plot1 <- renderPlot({
-    plot1 <- ggplot(vals$data,aes(x=year,y=sunvalue)) +
+    if(vals$missing){
+      plot1 <- ggplot(vals$imputedDataSet, aes(x = year, y = sunvalue)) 
+    } else {
+      plot1 <- ggplot(vals$data, aes(x = year, y = sunvalue)) 
+    }
+    plot1 = plot1 +
       labs(x = "Year", y = "Sunvalue") +
       ggtitle("Sunspot cycles\n\nLinear graph") +
       theme_bw() +
@@ -138,7 +147,12 @@ server <- function(input, output) {
   })
   
   output$plot2 <- renderPlot({
-    plot2 <- ggplot(vals$data, aes(x = year, y = sunvalue)) +
+    if(vals$missing){
+      plot2 <- ggplot(vals$imputedDataSet, aes(x = year, y = sunvalue)) 
+    } else {
+      plot2 <- ggplot(vals$data, aes(x = year, y = sunvalue)) 
+    }
+    plot2 = plot2 +  
       stat_smooth(method = "lm", formula = y ~ 1, se = FALSE, colour = "red", size=0.4) +
       facet_wrap(~ factor_cycle, nrow = 1) +
       labs(x = NULL, y = "Sunvalue") +
@@ -172,25 +186,33 @@ server <- function(input, output) {
     vals$missingIndices <- sort(sample(1:nrow(sun_df),5))
     toImpute <- vals$imputedDataSet$sunvalue
     
+    vals$missing = TRUE
     vals$imputedDataSet <- vals$data
     vals$imputedDataSet[vals$missingIndices,]$sunvalue = NA
+    vals$imputedDataSet$sunvalue = na.mean(vals$imputedDataSet$sunvalue)
+    if(vals$missing){
+      vals$missingPoints = vals$imputedDataSet[vals$missingIndices,]
+    } else {
+      vals$missingPoints = vals$data[vals$missingIndices,]
+    }
     
-    vals$missingPoints = sun_df[vals$missingIndices,]
-    vals$missing = TRUE
     vals$group1 <- vals$data[c(1:vals$missingIndices[1]-1),]
     vals$group2 <- vals$data[c(((vals$missingIndices[1])+1):((vals$missingIndices[2])-1)),]
     vals$group3 <- vals$data[c(((vals$missingIndices[2])+1):((vals$missingIndices[3])-1)),]
     vals$group4 <- vals$data[c(((vals$missingIndices[3])+1):((vals$missingIndices[4])-1)),]
     vals$group5 <- vals$data[c(((vals$missingIndices[4])+1):((vals$missingIndices[5])-1)),]
     vals$group6 <- vals$data[c(((vals$missingIndices[5])+1):length(vals$data$year)),]
-    
-    
-    
+
   })
   
-  #observeEvent(input$toggle, {
-  #  vals$missing = ifelse(vals$missing,FALSE,TRUE)
-  #})
+  observeEvent(input$toggle, {
+    vals$missing = ifelse(vals$missing,FALSE,TRUE)
+    if(vals$missing){
+      vals$missingPoints = vals$imputedDataSet[vals$missingIndices,]
+    } else {
+      vals$missingPoints = vals$data[vals$missingIndices,]
+    }
+  })
 }
 
 shinyApp(ui = ui, server = server)
