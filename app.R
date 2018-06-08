@@ -33,9 +33,11 @@ ui <- fluidPage(
     actionButton("toggle","Toggle actual/imputed")
   ),
   mainPanel(
-    plotOutput('plot1', click="plot1_click", brush="plot1_brush"),
-    plotOutput('plot2', click="plot2_click", brush="plot2_brush"),
-    verbatimTextOutput("info")
+    plotOutput('plot1', click="plot1_click", dblclick = "plot1_dblclick", 
+               brush=brushOpts(id = "plot1_brush", resetOnNew = TRUE)),
+    plotOutput('plot2', click="plot2_click", dblclick = "plot2_dblclick",
+               brush=brushOpts(id = "plot1_brush", resetOnNew = TRUE))
+    #verbatimTextOutput("info")
   )
   
 )
@@ -98,7 +100,11 @@ server <- function(input, output, session) {
                          missingPoints11 = missingPoints11,
                          missingPoints12 = missingPoints12,
                          missingPoints13 = missingPoints13,
-                         emptyFrame = emptyFrame)
+                         emptyFrame = emptyFrame,
+                         x1 = NULL,
+                         y1 = NULL,
+                         x2 = NULL,
+                         y2 = NULL)
   
   
   observeEvent(input$plot1_click,{
@@ -131,12 +137,35 @@ server <- function(input, output, session) {
     paste("Single Value Imputation Methods")
   })
 
-  output$info <- renderPrint({
-    print("Marked point:")
-    print(vals$markedPoints)
-    print("Imputed Dataset:")
-    print(vals$dataSetWithNA)
-
+  #output$info <- renderPrint({
+  #  print("Marked point:")
+  #  print(vals$markedPoints)
+  #  print("Imputed Dataset:")
+  #  print(vals$dataSetWithNA)
+  #})
+  
+  observeEvent(input$plot1_dblclick, {
+    brush <- input$plot1_brush
+    if (!is.null(brush)) {
+      vals$x1 <- c(brush$xmin, brush$xmax)
+      vals$y1 <- c(brush$ymin, brush$ymax)
+      
+    } else {
+      vals$x1 <- NULL
+      vals$y1 <- NULL
+    }
+  })
+  
+  observeEvent(input$plot2_dblclick, {
+    brush <- input$plot1_brush
+    if (!is.null(brush)) {
+      vals$x2 <- c(brush$xmin, brush$xmax)
+      vals$y2 <- c(brush$ymin, brush$ymax)
+      
+    } else {
+      vals$x2 <- NULL
+      vals$y2 <- NULL
+    }
   })
   
   output$plot1 <- renderPlot({
@@ -148,6 +177,7 @@ server <- function(input, output, session) {
     plot1 = plot1 +
       labs(x = "Year", y = "Sunvalue") +
       ggtitle("Sunspot cycles\n\nLinear graph") +
+      coord_cartesian(xlim = vals$x1, ylim = vals$y1, expand = FALSE) +
       theme_bw() +
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
@@ -204,6 +234,7 @@ server <- function(input, output, session) {
       facet_wrap(~ factor_cycle, nrow = 1) +
       labs(x = NULL, y = "Sunvalue") +
       ggtitle("Cyclic graph") +
+      coord_cartesian(xlim = vals$x2, ylim = vals$y2, expand = FALSE) +
       theme_bw() +
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
