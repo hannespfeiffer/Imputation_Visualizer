@@ -40,7 +40,7 @@ ui <- fluidPage(
     checkboxInput("method15","Random Forest",FALSE),
     checkboxInput("method16","Imputation of quadratic terms",FALSE),
     selectInput('display_method', 'Missing value display method', 
-                c(" Single Points and Boxplots","Error Boundaries")),
+                c("Single Points and Boxplots","Error Boundaries")),
     actionButton("generateMissingValues","Delete random Values"),
     actionButton("imputeAction","Impute Values"),
     actionButton("toggle","Toggle actual/imputed")
@@ -176,11 +176,7 @@ server <- function(input, output, session) {
   })
 
   output$info <- renderPrint({
-    
-    print("Test:")
-    #print(test)
-  #  print("Imputed Dataset:")
-  #  print(vals$dataSetWithNA)
+
   })
   
   observeEvent(input$plot1_dblclick, {
@@ -208,6 +204,7 @@ server <- function(input, output, session) {
   })
   
   output$plot1 <- renderPlot({
+    
     if(vals$missing){
       plot1 <- ggplot(vals$dataSetWithNA, aes(x = year, y = sunvalue)) 
     } else {
@@ -224,10 +221,54 @@ server <- function(input, output, session) {
             plot.title = element_text(size = rel(1.5), face = "bold", vjust = 1.5),
             #axis.text.x = element_blank(),
             #axis.ticks.x = element_blank(),
-            strip.background = element_rect(fill = "white"))   
-      
-      
+            strip.background = element_rect(fill = "white"))  
+    
+    
     if(vals$missing){
+      if(input$display_method == "Error Boundaries"){
+        temp <- vals$data[-vals$missingIndices,]
+        median
+
+        plot1 = plot1 +
+          geom_line(data=vals$group1, color="grey30", size=0.4) +
+          geom_line(data=vals$group2, color="grey30", size=0.4) +
+          geom_line(data=vals$group3, color="grey30", size=0.4) +
+          geom_line(data=vals$group4, color="grey30", size=0.4) +
+          geom_line(data=vals$group5, color="grey30", size=0.4) +
+          geom_line(data=vals$group6, color="grey30", size=0.4) +
+          geom_point(data=temp,fill="white", shape=21,color="cornflowerblue", size=1) +
+          geom_segment(aes(x = vals$data[vals$missingIndices[1],]$year,
+                           y = min(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue,
+                                   vals$method16points$one$sunvalue),
+                           xend = vals$data[vals$missingIndices[1],]$year,
+                           yend = max(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue, 
+                                      vals$method16points$one$sunvalue)), color="red") +
+          geom_segment(aes(x = vals$data[vals$missingIndices[2],]$year,
+                           y = min(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue,
+                                   vals$method16points$two$sunvalue),
+                           xend = vals$data[vals$missingIndices[2],]$year,
+                           yend = max(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue, 
+                                      vals$method16points$two$sunvalue)), color="red") +
+          geom_segment(aes(x = vals$data[vals$missingIndices[3],]$year,
+                           y = min(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue,
+                                   vals$method16points$three$sunvalue),
+                           xend = vals$data[vals$missingIndices[3],]$year,
+                           yend = max(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue, 
+                                      vals$method16points$three$sunvalue)), color="red") +
+          geom_segment(aes(x = vals$data[vals$missingIndices[4],]$year,
+                           y = min(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue,
+                                   vals$method16points$four$sunvalue),
+                           xend = vals$data[vals$missingIndices[4],]$year,
+                           yend = max(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue, 
+                                      vals$method16points$four$sunvalue)), color="red") +
+          geom_segment(aes(x = vals$data[vals$missingIndices[5],]$year,
+                           y = min(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue,
+                                   vals$method16points$five$sunvalue),
+                           xend = vals$data[vals$missingIndices[5],]$year,
+                           yend = max(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue, 
+                                      vals$method16points$five$sunvalue)), color="red") 
+      
+      } else {
      
       if(vals$method14chosen){
         plot1 = plot1 + 
@@ -275,9 +316,9 @@ server <- function(input, output, session) {
         geom_point(data=vals$missingPoints11, color="red",fill="red", size=1, shape=21) +
         geom_point(data=vals$missingPoints12, color="slategray4",fill="slategray4", size=1, shape=21) +
         geom_point(data=vals$missingPoints13, color="magenta",fill="magenta", size=1, shape=21) 
-        
-        
-      
+  
+      }
+    
       
     } else {
       plot1 = plot1 + 
