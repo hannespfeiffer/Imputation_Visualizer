@@ -74,6 +74,7 @@ server <- function(input, output, session) {
   emptyFrame = data.frame(year = numeric(), sunvalue = numeric(), factor_cycle = factor())
   markedpoints <- emptyFrame
   othermarkedpoints <- emptyFrame
+  errorsegments <- list()
   missingpoints <- emptyFrame
   missingPoints0 <- emptyFrame
   missingPoints1 <- emptyFrame
@@ -100,6 +101,7 @@ server <- function(input, output, session) {
                          dataSetWithNA = duplicate,
                          markedPoints = markedpoints,
                          otherMarkedPoints = othermarkedpoints,
+                         errorSegments = errorsegments,
                          missingPoints1 = missingpoints,
                          missing=FALSE,
                          valuesDeleted=FALSE,
@@ -177,7 +179,8 @@ server <- function(input, output, session) {
   })
 
   output$info <- renderPrint({
-    vals$method14points$one
+    c(vals$errorBoundaryPoints,
+    vals$markedPoints, vals$errorSegments)
   })
   
   observeEvent(input$plot1_dblclick, {
@@ -220,8 +223,6 @@ server <- function(input, output, session) {
             panel.grid.minor = element_blank(),
             panel.spacing = unit(0, "lines"),
             plot.title = element_text(size = rel(1.5), face = "bold", vjust = 1.5),
-            #axis.text.x = element_blank(),
-            #axis.ticks.x = element_blank(),
             strip.background = element_rect(fill = "white"))  
     
     
@@ -277,7 +278,7 @@ server <- function(input, output, session) {
                               vals$method16points$five$sunvalue))/2,
             factor_cycle = vals$data[vals$missingIndices[5],]$factor_cycle))
           
-          print(errorBoundaryPoints)
+          vals$errorBoundaryPoints <- errorBoundaryPoints
         }
           plot1 = plot1 +
             geom_line(data=vals$group1, color="grey30", size=0.4) +
@@ -289,38 +290,60 @@ server <- function(input, output, session) {
             geom_point(data=temp,fill="white", shape=21,color="cornflowerblue", size=1) 
              
             if(printErrorBoundaryPoints){
+              segment1 = data.frame(x = vals$data[vals$missingIndices[1],]$year,
+                                    y = min(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue,
+                                                   vals$method16points$one$sunvalue),
+                                    xend = vals$data[vals$missingIndices[1],]$year,
+                                    yend = max(vals$method14points$one$sunvalue, 
+                                                      vals$method15points$one$sunvalue, 
+                                                      vals$method16points$one$sunvalue), color="red",
+                                    factor_cycle=vals$data[vals$missingIndices[1],]$factor_cycle, size=0.1)
+              
+              segment2 = data.frame(x = vals$data[vals$missingIndices[2],]$year,
+                                    y = min(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue,
+                                                 vals$method16points$two$sunvalue),
+                                    xend = vals$data[vals$missingIndices[2],]$year,
+                                    yend = max(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue, 
+                                                    vals$method16points$two$sunvalue), color="red", 
+                                    factor_cycle=vals$data[vals$missingIndices[2],]$factor_cycle, size=0.1)
+              
+              segment3 = data.frame(x = vals$data[vals$missingIndices[3],]$year,
+                                    y = min(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue,
+                                                   vals$method16points$three$sunvalue),
+                                    xend = vals$data[vals$missingIndices[3],]$year,
+                                    yend = max(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue, 
+                                                      vals$method16points$three$sunvalue), color="red",
+                                    factor_cycle=vals$data[vals$missingIndices[3],]$factor_cycle)
+              
+              segment4 = data.frame(x = vals$data[vals$missingIndices[4],]$year,
+                                    y = min(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue,
+                                                   vals$method16points$four$sunvalue),
+                                    xend = vals$data[vals$missingIndices[4],]$year,
+                                    yend = max(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue, 
+                                                      vals$method16points$four$sunvalue), color="red",
+                                    factor_cycle=vals$data[vals$missingIndices[4],]$factor_cycle)
+              
+              segment5 = data.frame(x = vals$data[vals$missingIndices[5],]$year,
+                                    y = min(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue,
+                                                   vals$method16points$five$sunvalue),
+                                    xend = vals$data[vals$missingIndices[5],]$year,
+                                    yend = max(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue, 
+                                                      vals$method16points$five$sunvalue), color="red", lineend="round",
+                                    factor_cycle=vals$data[vals$missingIndices[5],]$factor_cycle)
               plot1 = plot1 + 
-                geom_segment(aes(x = vals$data[vals$missingIndices[1],]$year,
-                                 y = min(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue,
-                                         vals$method16points$one$sunvalue),
-                                 xend = vals$data[vals$missingIndices[1],]$year,
-                                 yend = max(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue, 
-                                            vals$method16points$one$sunvalue)), color="red") +
-                geom_segment(aes(x = vals$data[vals$missingIndices[2],]$year,
-                                 y = min(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue,
-                                         vals$method16points$two$sunvalue),
-                                 xend = vals$data[vals$missingIndices[2],]$year,
-                                 yend = max(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue, 
-                                            vals$method16points$two$sunvalue)), color="red") +
-                geom_segment(aes(x = vals$data[vals$missingIndices[3],]$year,
-                                 y = min(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue,
-                                         vals$method16points$three$sunvalue),
-                                 xend = vals$data[vals$missingIndices[3],]$year,
-                                 yend = max(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue, 
-                                            vals$method16points$three$sunvalue)), color="red") +
-                geom_segment(aes(x = vals$data[vals$missingIndices[4],]$year,
-                                 y = min(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue,
-                                         vals$method16points$four$sunvalue),
-                                 xend = vals$data[vals$missingIndices[4],]$year,
-                                 yend = max(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue, 
-                                            vals$method16points$four$sunvalue)), color="red") +
-                geom_segment(aes(x = vals$data[vals$missingIndices[5],]$year,
-                                 y = min(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue,
-                                         vals$method16points$five$sunvalue),
-                                 xend = vals$data[vals$missingIndices[5],]$year,
-                                 yend = max(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue, 
-                                            vals$method16points$five$sunvalue)), color="red") +
+                geom_segment(data=segment1,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+                geom_segment(data=segment2,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+                geom_segment(data=segment3,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+                geom_segment(data=segment4,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+                geom_segment(data=segment5,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
                 geom_point(data=errorBoundaryPoints)
+              
+              vals$errorSegments[[1]] <- segment1
+              vals$errorSegments[[2]] <- segment2
+              vals$errorSegments[[3]] <- segment3
+              vals$errorSegments[[4]] <- segment4
+              vals$errorSegments[[5]] <- segment5
+                
             }
         
       } else {
@@ -384,7 +407,7 @@ server <- function(input, output, session) {
     
     plot1 = plot1 + 
         geom_point(data=vals$otherMarkedPoints, color="violetred", size=1, fill="violetred",shape=21) +
-        geom_point(data=vals$markedPoints, color="red", size=2, fill="red",shape=21) 
+        geom_point(data=vals$markedPoints, color="red", size=2.5, fill="red",shape=21) 
     
     plot1
   })
@@ -404,8 +427,9 @@ server <- function(input, output, session) {
       theme_bw() +
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
-            panel.spacing = unit(0, "lines"),
-            #axis.line = element_line(color="green"),
+            panel.spacing = unit(0, "cm"),
+            line = element_blank(),
+            #axis.line = element_line(color="white"),
             plot.title = element_text(size = rel(1.5), face = "bold", vjust = 1.5),
             axis.text.x = element_blank(),
             axis.ticks.x = element_blank(),
@@ -430,14 +454,30 @@ server <- function(input, output, session) {
         geom_point(data=vals$missingPoints11, color="red",fill="red", size=1, shape=21) +
         geom_point(data=vals$missingPoints12, color="slategray4",fill="slategray4", size=1, shape=21) +
         geom_point(data=vals$missingPoints13, color="magenta",fill="magenta", size=1, shape=21) 
+      
+      
+      if(input$display_method == "Error Boundaries (for Multiple Imp.)"){
+        if(!(nrow(vals$method14points$one) == 0 && 
+           nrow(vals$method15points$one) == 0 &&  
+           nrow(vals$method16points$one) == 0 )){
+            plot2 = plot2 + 
+              geom_segment(data=vals$errorSegments[[1]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+ 
+              geom_segment(data=vals$errorSegments[[2]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+              geom_segment(data=vals$errorSegments[[3]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+              geom_segment(data=vals$errorSegments[[4]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
+              geom_segment(data=vals$errorSegments[[5]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+ 
+              geom_point(data=vals$errorBoundaryPoints)  
+        }
+      }
+      
     } else {
       plot2 = plot2 + 
         geom_point(data=vals$missingPoints0, color="red",fill="red", size=1.5, shape=21) 
       
     }
-      
+   
     plot2 = plot2 + 
-      geom_point(data=vals$markedPoints, color="red", size=2, fill="red",shape=21) 
+      geom_point(data=vals$markedPoints, color="red", size=2.5, fill="red",shape=21) 
     
     plot2
   }) 
