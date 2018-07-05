@@ -73,7 +73,7 @@ server <- function(input, output, session) {
   duplicate <- sun_df
   emptyFrame = data.frame(year = numeric(), sunvalue = numeric(), factor_cycle = factor())
   markedpoints <- emptyFrame
-  otherMarkedpoints <- emptyFrame
+  othermarkedpoints <- emptyFrame
   missingpoints <- emptyFrame
   missingPoints0 <- emptyFrame
   missingPoints1 <- emptyFrame
@@ -110,6 +110,7 @@ server <- function(input, output, session) {
   vals <- reactiveValues(data = sun_df,
                          dataSetWithNA = duplicate,
                          markedPoints = markedpoints,
+                         otherMarkedPoints = othermarkedpoints,
                          missingPoints1 = missingpoints,
                          missing=FALSE,
                          valuesDeleted=FALSE,
@@ -183,9 +184,9 @@ server <- function(input, output, session) {
     paste("Multiple Imputation Methods")
   })
 
-  #output$info <- renderPrint({
-
-  #})
+  output$info <- renderPrint({
+    vals$markedPoints
+  })
   
   observeEvent(input$plot1_dblclick, {
     brush <- input$plot1_brush
