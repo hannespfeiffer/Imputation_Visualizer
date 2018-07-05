@@ -3,6 +3,7 @@ library(ggplot2)
 library(imputeTS)
 library(mice)
 library(randomForest)
+library(sinew)
 
 
 ui <- fluidPage(
@@ -40,7 +41,7 @@ ui <- fluidPage(
     checkboxInput("method15","Random Forest",FALSE),
     checkboxInput("method16","Imputation of quadratic terms",FALSE),
     selectInput('display_method', 'Missing value display method', 
-                c("Single Points and Boxplots","Error Boundaries")),
+                c("Single Points and Boxplots","Error Boundaries (for Multiple Imp.)")),
     actionButton("generateMissingValues","Delete random Values"),
     actionButton("imputeAction","Impute Values"),
     actionButton("toggle","Toggle actual/imputed")
@@ -54,6 +55,11 @@ ui <- fluidPage(
   )
 )
 
+#' Server function 
+#'
+#' @param input 
+#' @param output 
+#' @param session 
 server <- function(input, output, session) {
   
   sunspot = read.table(file="sunspot.month.csv", 
@@ -67,6 +73,7 @@ server <- function(input, output, session) {
   duplicate <- sun_df
   emptyFrame = data.frame(year = numeric(), sunvalue = numeric(), factor_cycle = factor())
   markedpoints <- emptyFrame
+  otherMarkedpoints <- emptyFrame
   missingpoints <- emptyFrame
   missingPoints0 <- emptyFrame
   missingPoints1 <- emptyFrame
@@ -148,6 +155,7 @@ server <- function(input, output, session) {
                   threshold = 5, maxpoints = 1)
     if (nrow(nearpoint) != 0){
       vals$markedPoints <- vals$markedPoints[0,]
+      vals$otherMarkedPoints <- vals$data[factor_cycle==nearpoint$factor_cycle,]
       vals$markedPoints <- rbind(vals$markedPoints, data.frame(
                                  year=nearpoint$year,
                                  sunvalue=nearpoint$sunvalue,
@@ -160,11 +168,11 @@ server <- function(input, output, session) {
                             threshold = 5, maxpoints = 1)
     if (nrow(nearpoint) != 0){
       vals$markedPoints <- vals$markedPoints[0,]
+      vals$otherMarkedPoints <- vals$data[factor_cycle==nearpoint$factor_cycle,]
       vals$markedPoints <- rbind(vals$markedPoints, data.frame(
                                  year=nearpoint$year,
                                  sunvalue=nearpoint$sunvalue,
                                  factor_cycle=nearpoint$factor_cycle))
-      #vals$data$year[vals$data$year %in% c(nearpoint$year)]=NA
     }
   })
   
@@ -175,9 +183,9 @@ server <- function(input, output, session) {
     paste("Multiple Imputation Methods")
   })
 
-  output$info <- renderPrint({
+  #output$info <- renderPrint({
 
-  })
+  #})
   
   observeEvent(input$plot1_dblclick, {
     brush <- input$plot1_brush
@@ -225,7 +233,7 @@ server <- function(input, output, session) {
     
     
     if(vals$missing){
-      if(input$display_method == "Error Boundaries"){
+      if(input$display_method == "Error Boundaries (for Multiple Imp.)"){
         temp <- vals$data[-vals$missingIndices,]
         median
 
@@ -267,7 +275,6 @@ server <- function(input, output, session) {
                            xend = vals$data[vals$missingIndices[5],]$year,
                            yend = max(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue, 
                                       vals$method16points$five$sunvalue)), color="red") 
-      
       } else {
      
       if(vals$method14chosen){
@@ -329,6 +336,7 @@ server <- function(input, output, session) {
     
     
     plot1 = plot1 + 
+        geom_point(data=vals$otherMarkedPoints, color="violetred", size=1, fill="violetred",shape=21) +
         geom_point(data=vals$markedPoints, color="red", size=2, fill="red",shape=21) 
     
     plot1
@@ -383,6 +391,7 @@ server <- function(input, output, session) {
     }
       
     plot2 = plot2 + 
+      #geom_point(data=vals$otherMarkedPoints, color="violetred", size=1, fill="violetred",shape=21) +
       geom_point(data=vals$markedPoints, color="red", size=2, fill="red",shape=21) 
     
     plot2
@@ -599,6 +608,15 @@ server <- function(input, output, session) {
           vals$method14chosen = TRUE
           vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
           combined <- invisible(mice(vals$dataSetWithNA, m=10, method="pmm", maxit=10, printFlag = FALSE))
+#' Title
+#'
+#' @param df 
+#' @param index 
+#'
+#' @return
+#' @export
+#'
+#' @examples
           vals$method14 <- mapply(function(df,index) {
             for(i in 1:10){
               df <- rbind(df,complete(combined,i)[vals$missingIndices[index],])

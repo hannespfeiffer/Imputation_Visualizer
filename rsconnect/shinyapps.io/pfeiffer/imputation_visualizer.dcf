@@ -1,0 +1,10 @@
+name: imputation_visualizer
+title:
+username:
+account: pfeiffer
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 362749
+bundleId: 1436116
+url: https://pfeiffer.shinyapps.io/imputation_visualizer/
+when: 1529357426.41576
