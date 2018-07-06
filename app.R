@@ -178,9 +178,9 @@ server <- function(input, output, session) {
     paste("Multiple Imputation Methods")
   })
 
-  output$info <- renderPrint({
-    c(vals$errorBoundaryPoints,
-    vals$markedPoints, vals$errorSegments)
+  output$info <- renderText({
+    stringi::stri_join_list(c("Marked point:",vals$markedPoints))
+    
   })
   
   observeEvent(input$plot1_dblclick, {
@@ -343,7 +343,6 @@ server <- function(input, output, session) {
               vals$errorSegments[[3]] <- segment3
               vals$errorSegments[[4]] <- segment4
               vals$errorSegments[[5]] <- segment5
-                
             }
         
       } else {
@@ -395,15 +394,12 @@ server <- function(input, output, session) {
         geom_point(data=vals$missingPoints12, color="slategray4",fill="slategray4", size=1, shape=21) +
         geom_point(data=vals$missingPoints13, color="magenta",fill="magenta", size=1, shape=21) 
       }
-    
-      
     } else {
       plot1 = plot1 + 
         geom_line(color="grey30", size=0.4)  +
         geom_point(fill="white", shape=21,color="cornflowerblue", size=1) +
         geom_point(data=vals$missingPoints0, color="red",fill="red", size=1, shape=21) 
     } 
-    
     
     plot1 = plot1 + 
         geom_point(data=vals$otherMarkedPoints, color="violetred", size=1, fill="violetred",shape=21) +
@@ -437,7 +433,6 @@ server <- function(input, output, session) {
       geom_line(color="darkseagreen", size=0.4) +
       geom_point(fill="white", shape=21, color="cornflowerblue", size=1) 
       
-   
      if(vals$missing){
       plot2 = plot2 +
         geom_point(fill="white", shape=21,color="cornflowerblue", size=1) +
@@ -473,7 +468,6 @@ server <- function(input, output, session) {
     } else {
       plot2 = plot2 + 
         geom_point(data=vals$missingPoints0, color="red",fill="red", size=1.5, shape=21) 
-      
     }
    
     plot2 = plot2 + 
@@ -522,7 +516,6 @@ server <- function(input, output, session) {
     vals$group6 <- vals$data[c(((vals$missingIndices[5])+1):length(vals$data$year)),]
     
     updateCheckboxInput(session, "method11", value = TRUE)
-
   })
   
   observeEvent(input$toggle, {
@@ -739,9 +732,7 @@ server <- function(input, output, session) {
             if(index==4){vals$method16points$four <- df}
             if(index==5){vals$method16points$five <- df}
           },vals$method16, seq_along(vals$method16))
-          
         }
-        
       }
       
     } else {
