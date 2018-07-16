@@ -1,3 +1,8 @@
+# This code builds a shiny web application that lets the user test and
+# compare various imputation methods on the sunspot data set
+# Author: Hannes Pfeiffer
+
+
 library(shiny)
 library(ggplot2)
 library(imputeTS)
@@ -5,10 +10,26 @@ library(mice)
 library(randomForest)
 library(sinew)
 
+# read input file
+sunspot = read.table(file="sunspot.month.csv", header=TRUE, sep=",", dec=".")
 
+# reduce data to yearly points
+wholeyear_mask = sunspot$time %% 1 == 0
+year = sunspot$time[wholeyear_mask]
+sunvalue = sunspot$value[wholeyear_mask]
+
+# categorize data points into cyclic pattern (1 to 11, starting from 4)
+cycle = c(seq(4, 11), rep(seq(1, 11), 23), seq(1:4))
+factor_cycle = factor(cycle)
+sun_df=data.frame(year, sunvalue, factor_cycle)
+
+
+# creating UI 
 ui <- fluidPage(
   
   headerPanel("Imputation Visualizer"),
+
+  # sidebar
   sidebarPanel(
     textOutput("imp_method"),
     tags$head(tags$style("#imp_method{color: black;
@@ -23,6 +44,8 @@ ui <- fluidPage(
                          }"
     )
     ),
+    
+    # inputs
     checkboxInput("method1","Linear Interpolation",FALSE),
     checkboxInput("method2","Spline Interpolation",FALSE),
     checkboxInput("method3","Stineman Interpolation",FALSE),
@@ -46,14 +69,19 @@ ui <- fluidPage(
     actionButton("imputeAction","Impute Values"),
     actionButton("toggle","Toggle actual/imputed")
   ),
+  
+  # graphs
   mainPanel(
-    plotOutput('plot1', click="plot1_click", dblclick = "plot1_dblclick", 
+    plotOutput('plot1', click = "plot1_click", dblclick = "plot1_dblclick", 
                brush=brushOpts(id = "plot1_brush", resetOnNew = TRUE)),
-    plotOutput('plot2', click="plot2_click", dblclick = "plot2_dblclick",
-               brush=brushOpts(id = "plot1_brush", resetOnNew = TRUE)),
+    plotOutput('plot2', click = "plot2_click", dblclick = "plot2_dblclick",
+               brush = brushOpts(id = "plot1_brush", resetOnNew = TRUE)),
     verbatimTextOutput("info")
   )
 )
+
+
+
 
 #' Server function 
 #'
@@ -62,21 +90,28 @@ ui <- fluidPage(
 #' @param session 
 server <- function(input, output, session) {
   
-  sunspot = read.table(file="sunspot.month.csv", 
-                       header=TRUE, sep=",", dec=".")
-  wholeyear_mask = sunspot$time%%1==0
-  year = sunspot$time[wholeyear_mask]
-  sunvalue = sunspot$value[wholeyear_mask]
-  cycle = c(seq(4,11), rep(seq(1,11),23), seq(1:4))
-  factor_cycle = factor(cycle)
-  sun_df=data.frame(year,sunvalue,factor_cycle)
+  #-------
+  # Setup
+  #-------
+  
+  # define dataframes for visualization and imputation
   duplicate <- sun_df
-  emptyFrame = data.frame(year = numeric(), sunvalue = numeric(), factor_cycle = factor())
+  emptyFrame = data.frame(year = numeric(), sunvalue = numeric(), 
+                          factor_cycle = factor())
+  
+  # the point marked by mouse click
   markedpoints <- emptyFrame
+  
+  # cyclic neighbors of marked point
   othermarkedpoints <- emptyFrame
+  
+  # list of dfs containing points for uncertainty ranges (one per mult. imp. meth.)
   errorsegments <- list()
-  missingpoints <- emptyFrame
+  
+  # contains points at missing point indices from original data (for toggling)
   missingPoints0 <- emptyFrame
+  
+  # dfs containing imputed points for method x
   missingPoints1 <- emptyFrame
   missingPoints2 <- emptyFrame
   missingPoints3 <- emptyFrame
@@ -92,17 +127,21 @@ server <- function(input, output, session) {
   missingPoints13 <- emptyFrame
   missingPoints14 <- emptyFrame
   missingPoints15 <- emptyFrame
-  method14points <- list(one = emptyFrame, two = emptyFrame, three = emptyFrame, four = emptyFrame, five = emptyFrame)
-  method15points <- list(one = emptyFrame, two = emptyFrame, three = emptyFrame, four = emptyFrame, five = emptyFrame)
-  method16points <- list(one = emptyFrame, two = emptyFrame, three = emptyFrame, four = emptyFrame, five = emptyFrame)
   
+  # multiple imputation methods impute 5 values per missing point 
+  method14points <- list(one = emptyFrame, two = emptyFrame, three = emptyFrame,
+                         four = emptyFrame, five = emptyFrame)
+  method15points <- list(one = emptyFrame, two = emptyFrame, three = emptyFrame,
+                         four = emptyFrame, five = emptyFrame)
+  method16points <- list(one = emptyFrame, two = emptyFrame, three = emptyFrame,
+                         four = emptyFrame, five = emptyFrame)
   
+  # reactive values
   vals <- reactiveValues(data = sun_df,
                          dataSetWithNA = duplicate,
                          markedPoints = markedpoints,
                          otherMarkedPoints = othermarkedpoints,
                          errorSegments = errorsegments,
-                         missingPoints1 = missingpoints,
                          missing=FALSE,
                          valuesDeleted=FALSE,
                          singleImpMethods=FALSE,
@@ -141,75 +180,14 @@ server <- function(input, output, session) {
                          yGraph2 = NULL)
   
   
-  observeEvent(input$plot1_click,{
-    nearpoint <- nearPoints(vals$data,input$plot1_click, 
-                  xvar = "year", yvar="sunvalue",
-                  threshold = 5, maxpoints = 1)
-    if (nrow(nearpoint) != 0){
-      vals$markedPoints <- vals$markedPoints[0,]
-      vals$otherMarkedPoints <- vals$data[factor_cycle==nearpoint$factor_cycle,]
-      vals$markedPoints <- rbind(vals$markedPoints, data.frame(
-                                 year=nearpoint$year,
-                                 sunvalue=nearpoint$sunvalue,
-                                 factor_cycle=nearpoint$factor_cycle))
-    } else {
-      vals$markedPoints <- vals$markedPoints[0,]
-      vals$otherMarkedPoints <- vals$otherMarkedPoints[0,]
-    }
-  })
-  observeEvent(input$plot2_click,{
-    nearpoint <- nearPoints(vals$data,input$plot2_click, 
-                            xvar = "year", yvar="sunvalue",
-                            threshold = 5, maxpoints = 1)
-    if (nrow(nearpoint) != 0){
-      vals$markedPoints <- vals$markedPoints[0,]
-      vals$otherMarkedPoints <- vals$data[factor_cycle==nearpoint$factor_cycle,]
-      vals$markedPoints <- rbind(vals$markedPoints, data.frame(
-                                 year=nearpoint$year,
-                                 sunvalue=nearpoint$sunvalue,
-                                 factor_cycle=nearpoint$factor_cycle))
-    }
-  })
+  #-----------------
+  # Graph rendering 
+  #-----------------
   
-  output$imp_method <- renderText({
-    paste("Single Value Imputation Methods")
-  })
-  output$imp2_method <- renderText({
-    paste("Multiple Imputation Methods")
-  })
-
-  output$info <- renderText({
-    stringi::stri_join_list(c("Marked point:",vals$markedPoints))
-    
-  })
-  
-  observeEvent(input$plot1_dblclick, {
-    brush <- input$plot1_brush
-    if (!is.null(brush)) {
-      vals$xGraph1 <- c(brush$xmin, brush$xmax)
-      vals$yGraph1 <- c(brush$ymin, brush$ymax)
-      
-    } else {
-      vals$xGraph1 <- NULL
-      vals$yGraph1 <- NULL
-    }
-  })
-  
-  observeEvent(input$plot2_dblclick, {
-    brush <- input$plot1_brush
-    if (!is.null(brush)) {
-      vals$xGraph2 <- c(brush$xmin, brush$xmax)
-      vals$yGraph2 <- c(brush$ymin, brush$ymax)
-      
-    } else {
-      vals$xGraph2 <- NULL
-      vals$yGraph2 <- NULL
-    }
-  })
-  
+  # render linear plot 
   output$plot1 <- renderPlot({
     
-    if(vals$missing){
+    if (vals$missing) {
       plot1 <- ggplot(vals$dataSetWithNA, aes(x = year, y = sunvalue)) 
     } else {
       plot1 <- ggplot(vals$data, aes(x = year, y = sunvalue)) 
@@ -226,196 +204,281 @@ server <- function(input, output, session) {
             strip.background = element_rect(fill = "white"))  
     
     
-    if(vals$missing){
+    if (vals$missing) {
       printErrorBoundaryPoints = FALSE
-      temp <- vals$data[-vals$missingIndices,]
-      if(input$display_method == "Error Boundaries (for Multiple Imp.)"){
-        if(nrow(vals$method14points$one) == 0 && 
+      temp <- vals$data[-vals$missingIndices, ]
+      
+      if (input$display_method == "Error Boundaries (for Multiple Imp.)") {
+        if (nrow(vals$method14points$one) == 0 && 
            nrow(vals$method15points$one) == 0 &&  
-           nrow(vals$method16points$one) == 0 ){
-          showNotification(session=session,"Error Boundaries require a Multiple Imp. method to be chosen AND imputed",
-                           type="warning")
-        } else{
+           nrow(vals$method16points$one) == 0 ) {
+          showNotification(session = session, "Error Boundaries require a Multiple 
+                           Imp. method to be chosen AND imputed", type="warning")
+        } else {
           printErrorBoundaryPoints = TRUE
-          errorBoundaryPoints <- vals$emptyFrame[0,]
+          errorBoundaryPoints <- vals$emptyFrame[0, ]
           errorBoundaryPoints <- rbind(errorBoundaryPoints, data.frame(
             year = vals$data[vals$missingIndices[1],]$year,
-            sunvalue = (min(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue,
-                         vals$method16points$one$sunvalue) +
-                     max(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue, 
-                         vals$method16points$one$sunvalue))/2,
-            factor_cycle = vals$data[vals$missingIndices[1],]$factor_cycle))
+            sunvalue = (min(vals$method14points$one$sunvalue, 
+                            vals$method15points$one$sunvalue,
+                            vals$method16points$one$sunvalue) +
+                        max(vals$method14points$one$sunvalue, 
+                            vals$method15points$one$sunvalue, 
+                            vals$method16points$one$sunvalue))/2,
+                        factor_cycle = vals$data[vals$missingIndices[1], ]$
+                                       factor_cycle))
           
           errorBoundaryPoints <- rbind(errorBoundaryPoints, data.frame(
-            year = vals$data[vals$missingIndices[2],]$year,
-            sunvalue = (min(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue,
+            year = vals$data[vals$missingIndices[2], ]$year,
+            sunvalue = (min(vals$method14points$two$sunvalue,
+                            vals$method15points$two$sunvalue,
                             vals$method16points$two$sunvalue) +
-                          max(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue, 
-                              vals$method16points$two$sunvalue))/2,
-            factor_cycle = vals$data[vals$missingIndices[2],]$factor_cycle))
+                        max(vals$method14points$two$sunvalue, 
+                            vals$method15points$two$sunvalue, 
+                            vals$method16points$two$sunvalue))/2,
+                        factor_cycle = vals$data[vals$missingIndices[2], ]$
+                                       factor_cycle))
           
           errorBoundaryPoints <- rbind(errorBoundaryPoints, data.frame(
             year = vals$data[vals$missingIndices[3],]$year,
-            sunvalue = (min(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue,
+            sunvalue = (min(vals$method14points$three$sunvalue, 
+                            vals$method15points$three$sunvalue,
                             vals$method16points$three$sunvalue) +
-                          max(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue, 
-                              vals$method16points$three$sunvalue))/2,
-            factor_cycle = vals$data[vals$missingIndices[3],]$factor_cycle))
+                        max(vals$method14points$three$sunvalue, 
+                            vals$method15points$three$sunvalue, 
+                            vals$method16points$three$sunvalue))/2,
+            factor_cycle = vals$data[vals$missingIndices[3], ]$factor_cycle))
           
           errorBoundaryPoints <- rbind(errorBoundaryPoints, data.frame(
             year = vals$data[vals$missingIndices[4],]$year,
-            sunvalue = (min(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue,
+            sunvalue = (min(vals$method14points$four$sunvalue, 
+                            vals$method15points$four$sunvalue,
                             vals$method16points$four$sunvalue) +
-                          max(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue, 
-                              vals$method16points$four$sunvalue))/2,
-            factor_cycle = vals$data[vals$missingIndices[4],]$factor_cycle))
+                        max(vals$method14points$four$sunvalue, 
+                            vals$method15points$four$sunvalue, 
+                            vals$method16points$four$sunvalue))/2,
+            factor_cycle = vals$data[vals$missingIndices[4], ]$factor_cycle))
           
           errorBoundaryPoints <- rbind(errorBoundaryPoints, data.frame(
             year = vals$data[vals$missingIndices[5],]$year,
-            sunvalue = (min(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue,
+            sunvalue = (min(vals$method14points$five$sunvalue, 
+                            vals$method15points$five$sunvalue,
                             vals$method16points$five$sunvalue) +
-                          max(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue, 
-                              vals$method16points$five$sunvalue))/2,
-            factor_cycle = vals$data[vals$missingIndices[5],]$factor_cycle))
+                        max(vals$method14points$five$sunvalue, 
+                            vals$method15points$five$sunvalue, 
+                            vals$method16points$five$sunvalue))/2,
+            factor_cycle = vals$data[vals$missingIndices[5], ]$factor_cycle))
           
           vals$errorBoundaryPoints <- errorBoundaryPoints
         }
-          plot1 = plot1 +
-            geom_line(data=vals$group1, color="grey30", size=0.4) +
-            geom_line(data=vals$group2, color="grey30", size=0.4) +
-            geom_line(data=vals$group3, color="grey30", size=0.4) +
-            geom_line(data=vals$group4, color="grey30", size=0.4) +
-            geom_line(data=vals$group5, color="grey30", size=0.4) +
-            geom_line(data=vals$group6, color="grey30", size=0.4) +
-            geom_point(data=temp,fill="white", shape=21,color="cornflowerblue", size=1) 
+        
+        plot1 = plot1 +
+          geom_line(data = vals$group1, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group2, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group3, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group4, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group5, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group6, color = "grey30", size = 0.4) +
+          geom_point(data = temp, fill = "white", shape = 21, 
+                     color = "cornflowerblue", size = 1) 
              
-            if(printErrorBoundaryPoints){
-              segment1 = data.frame(x = vals$data[vals$missingIndices[1],]$year,
-                                    y = min(vals$method14points$one$sunvalue, vals$method15points$one$sunvalue,
-                                                   vals$method16points$one$sunvalue),
-                                    xend = vals$data[vals$missingIndices[1],]$year,
-                                    yend = max(vals$method14points$one$sunvalue, 
-                                                      vals$method15points$one$sunvalue, 
-                                                      vals$method16points$one$sunvalue), color="red",
-                                    factor_cycle=vals$data[vals$missingIndices[1],]$factor_cycle, size=0.1)
-              
-              segment2 = data.frame(x = vals$data[vals$missingIndices[2],]$year,
-                                    y = min(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue,
-                                                 vals$method16points$two$sunvalue),
-                                    xend = vals$data[vals$missingIndices[2],]$year,
-                                    yend = max(vals$method14points$two$sunvalue, vals$method15points$two$sunvalue, 
-                                                    vals$method16points$two$sunvalue), color="red", 
-                                    factor_cycle=vals$data[vals$missingIndices[2],]$factor_cycle, size=0.1)
-              
-              segment3 = data.frame(x = vals$data[vals$missingIndices[3],]$year,
-                                    y = min(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue,
-                                                   vals$method16points$three$sunvalue),
-                                    xend = vals$data[vals$missingIndices[3],]$year,
-                                    yend = max(vals$method14points$three$sunvalue, vals$method15points$three$sunvalue, 
-                                                      vals$method16points$three$sunvalue), color="red",
-                                    factor_cycle=vals$data[vals$missingIndices[3],]$factor_cycle)
-              
-              segment4 = data.frame(x = vals$data[vals$missingIndices[4],]$year,
-                                    y = min(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue,
-                                                   vals$method16points$four$sunvalue),
-                                    xend = vals$data[vals$missingIndices[4],]$year,
-                                    yend = max(vals$method14points$four$sunvalue, vals$method15points$four$sunvalue, 
-                                                      vals$method16points$four$sunvalue), color="red",
-                                    factor_cycle=vals$data[vals$missingIndices[4],]$factor_cycle)
-              
-              segment5 = data.frame(x = vals$data[vals$missingIndices[5],]$year,
-                                    y = min(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue,
-                                                   vals$method16points$five$sunvalue),
-                                    xend = vals$data[vals$missingIndices[5],]$year,
-                                    yend = max(vals$method14points$five$sunvalue, vals$method15points$five$sunvalue, 
-                                                      vals$method16points$five$sunvalue), color="red", lineend="round",
-                                    factor_cycle=vals$data[vals$missingIndices[5],]$factor_cycle)
-              plot1 = plot1 + 
-                geom_segment(data=segment1,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-                geom_segment(data=segment2,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-                geom_segment(data=segment3,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-                geom_segment(data=segment4,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-                geom_segment(data=segment5,lineend="round",aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-                geom_point(data=errorBoundaryPoints)
-              
-              vals$errorSegments[[1]] <- segment1
-              vals$errorSegments[[2]] <- segment2
-              vals$errorSegments[[3]] <- segment3
-              vals$errorSegments[[4]] <- segment4
-              vals$errorSegments[[5]] <- segment5
-            }
+        if (printErrorBoundaryPoints) {
+          segment1 = data.frame(x = vals$data[vals$missingIndices[1], ]$year,
+                                y = min(vals$method14points$one$sunvalue, 
+                                        vals$method15points$one$sunvalue,
+                                        vals$method16points$one$sunvalue),
+                                xend = vals$data[vals$missingIndices[1], ]$year,
+                                yend = max(vals$method14points$one$sunvalue, 
+                                           vals$method15points$one$sunvalue, 
+                                           vals$method16points$one$sunvalue), 
+                                color = "red",
+                                factor_cycle = vals$data[vals$missingIndices[1], ]$
+                                               factor_cycle, 
+                                size = 0.1)
+            
+          segment2 = data.frame(x = vals$data[vals$missingIndices[2], ]$year,
+                                y = min(vals$method14points$two$sunvalue, 
+                                        vals$method15points$two$sunvalue,
+                                        vals$method16points$two$sunvalue),
+                                xend = vals$data[vals$missingIndices[2], ]$year,
+                                yend = max(vals$method14points$two$sunvalue, 
+                                           vals$method15points$two$sunvalue, 
+                                           vals$method16points$two$sunvalue), 
+                                color = "red", 
+                                factor_cycle = vals$data[vals$missingIndices[2], ]$
+                                               factor_cycle, 
+                                size = 0.1)
+            
+          segment3 = data.frame(x = vals$data[vals$missingIndices[3], ]$year,
+                                y = min(vals$method14points$three$sunvalue, 
+                                        vals$method15points$three$sunvalue,
+                                        vals$method16points$three$sunvalue),
+                                xend = vals$data[vals$missingIndices[3], ]$year,
+                                yend = max(vals$method14points$three$sunvalue, 
+                                           vals$method15points$three$sunvalue, 
+                                           vals$method16points$three$sunvalue), 
+                                color = "red",
+                                factor_cycle = vals$data[vals$missingIndices[3], ]$
+                                               factor_cycle)
+            
+          segment4 = data.frame(x = vals$data[vals$missingIndices[4], ]$year,
+                                y = min(vals$method14points$four$sunvalue, 
+                                        vals$method15points$four$sunvalue,
+                                        vals$method16points$four$sunvalue),
+                                xend = vals$data[vals$missingIndices[4], ]$year,
+                                yend = max(vals$method14points$four$sunvalue, 
+                                           vals$method15points$four$sunvalue, 
+                                           vals$method16points$four$sunvalue), 
+                                color = "red",
+                                factor_cycle = vals$data[vals$missingIndices[4], ]$
+                                               factor_cycle)
+            
+          segment5 = data.frame(x = vals$data[vals$missingIndices[5], ]$year,
+                                y = min(vals$method14points$five$sunvalue, 
+                                        vals$method15points$five$sunvalue,
+                                        vals$method16points$five$sunvalue),
+                                xend = vals$data[vals$missingIndices[5], ]$year,
+                                yend = max(vals$method14points$five$sunvalue, 
+                                           vals$method15points$five$sunvalue, 
+                                           vals$method16points$five$sunvalue), 
+                                color = "red", 
+                                lineend = "round",
+                                factor_cycle = vals$data[vals$missingIndices[5], ]$
+                                               factor_cycle)
+          plot1 = plot1 + 
+            geom_segment(data = segment1, lineend = "round", 
+                         aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                         size = 1) +
+            geom_segment(data = segment2, lineend = "round", 
+                         aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                         size = 1) +
+            geom_segment(data = segment3, lineend = "round", 
+                         aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                         size = 1) +
+            geom_segment(data = segment4, lineend = "round", 
+                         aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                         size = 1) +
+            geom_segment(data = segment5, lineend = "round", 
+                         aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                         size = 1) +
+            geom_point(data = errorBoundaryPoints)
+          
+          vals$errorSegments[[1]] <- segment1
+          vals$errorSegments[[2]] <- segment2
+          vals$errorSegments[[3]] <- segment3
+          vals$errorSegments[[4]] <- segment4
+          vals$errorSegments[[5]] <- segment5
+        }
         
       } else {
-     
-      if(vals$method14chosen){
-        plot1 = plot1 + 
-          geom_boxplot(data=vals$method14points$one, color="blue", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method14points$two, color="blue", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method14points$three, color="blue", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method14points$four, color="blue", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method14points$five, color="blue", width=0.3, size=0.3, outlier.size = 0.7) 
-      }
-      if(vals$method15chosen){
-        plot1 = plot1 + 
-          geom_boxplot(data=vals$method15points$one, color="red3", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method15points$two, color="red3", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method15points$three, color="red3", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method15points$four, color="red3", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method15points$five, color="red3", width=0.3, size=0.3, outlier.size = 0.7) 
-      }
-      if(vals$method16chosen){
-        plot1 = plot1 + 
-          geom_boxplot(data=vals$method16points$one, color="springgreen4", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method16points$two, color="springgreen4", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method16points$three, color="springgreen4", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method16points$four, color="springgreen4", width=0.3, size=0.3, outlier.size = 0.7) +
-          geom_boxplot(data=vals$method16points$five, color="springgreen4", width=0.3, size=0.3, outlier.size = 0.7) 
-      }
-      
-      plot1 = plot1 +
-        geom_line(data=vals$group1, color="grey30", size=0.4) +
-        geom_line(data=vals$group2, color="grey30", size=0.4) +
-        geom_line(data=vals$group3, color="grey30", size=0.4) +
-        geom_line(data=vals$group4, color="grey30", size=0.4) +
-        geom_line(data=vals$group5, color="grey30", size=0.4) +
-        geom_line(data=vals$group6, color="grey30", size=0.4) +
-        geom_point(fill="white", shape=21,color="cornflowerblue", size=1) +
-        geom_point(data=vals$missingPoints1, color="burlywood",fill="burlywood", size=1, shape=21) +
-        geom_point(data=vals$missingPoints2, color="yellow3",fill="yellow3", size=1, shape=21) +
-        geom_point(data=vals$missingPoints3, color="violetred",fill="violetred", size=1, shape=21) +
-        geom_point(data=vals$missingPoints4, color="tomato",fill="tomato", size=1, shape=21) +
-        geom_point(data=vals$missingPoints5, color="green3",fill="green3", size=1, shape=21) +
-        geom_point(data=vals$missingPoints6, color="royalblue1",fill="royalblue1", size=1, shape=21) +
-        geom_point(data=vals$missingPoints7, color="cadetblue",fill="cadetblue", size=1, shape=21) +
-        geom_point(data=vals$missingPoints8, color="mediumpurple3",fill="mediumpurple3", size=1, shape=21) +
-        geom_point(data=vals$missingPoints9, color="indianred2",fill="indianred2", size=1, shape=21) +
-        geom_point(data=vals$missingPoints10, color="dodgerblue1",fill="dodgerblue1", size=1, shape=21) +
-        geom_point(data=vals$missingPoints11, color="red",fill="red", size=1, shape=21) +
-        geom_point(data=vals$missingPoints12, color="slategray4",fill="slategray4", size=1, shape=21) +
-        geom_point(data=vals$missingPoints13, color="magenta",fill="magenta", size=1, shape=21) 
+        if (vals$method14chosen) {
+          plot1 = plot1 + 
+            geom_boxplot(data = vals$method14points$one,   color = "blue", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method14points$two,   color = "blue", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method14points$three, color = "blue", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method14points$four,  color = "blue", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method14points$five,  color = "blue", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) 
+        }
+        
+        if (vals$method15chosen) {
+          plot1 = plot1 + 
+            geom_boxplot(data = vals$method15points$one,   color = "red3", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method15points$two,   color = "red3", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method15points$three, color = "red3", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method15points$four,  color = "red3", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method15points$five,  color = "red3", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) 
+        }
+        
+        if (vals$method16chosen) {
+          plot1 = plot1 + 
+            geom_boxplot(data = vals$method16points$one,   color = "springgreen4", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method16points$two,   color = "springgreen4", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method16points$three, color = "springgreen4", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method16points$four,  color = "springgreen4", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) +
+            geom_boxplot(data = vals$method16points$five,  color = "springgreen4", 
+                         width = 0.3, size = 0.3, outlier.size = 0.7) 
+        }
+        
+        plot1 = plot1 +
+          geom_line(data = vals$group1, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group2, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group3, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group4, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group5, color = "grey30", size = 0.4) +
+          geom_line(data = vals$group6, color = "grey30", size = 0.4) +
+          geom_point(fill = "white", shape = 21, color = "cornflowerblue", size = 1) +
+          geom_point(data = vals$missingPoints1, color = "burlywood", 
+                     fill = "burlywood", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints2, color = "yellow3", 
+                     fill = "yellow3", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints3, color = "violetred", 
+                     fill = "violetred", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints4, color = "tomato", 
+                     fill = "tomato", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints5, color = "green3", 
+                     fill = "green3", size = 1, shape  = 21) +
+          geom_point(data = vals$missingPoints6, color = "royalblue1", 
+                     fill = "royalblue1", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints7, color = "cadetblue", 
+                     fill = "cadetblue", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints8, color = "mediumpurple3", 
+                     fill = "mediumpurple3", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints9, color = "indianred2", 
+                     fill = "indianred2", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints10, color = "dodgerblue1", 
+                     fill = "dodgerblue1", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints11, color = "red", 
+                     fill = "red", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints12, color = "slategray4", 
+                     fill = "slategray4", size = 1, shape = 21) +
+          geom_point(data = vals$missingPoints13, color = "magenta", 
+                     fill = "magenta", size = 1, shape = 21) 
       }
     } else {
       plot1 = plot1 + 
-        geom_line(color="grey30", size=0.4)  +
-        geom_point(fill="white", shape=21,color="cornflowerblue", size=1) +
-        geom_point(data=vals$missingPoints0, color="red",fill="red", size=1, shape=21) 
+        geom_line(color = "grey30", size = 0.4)  +
+        geom_point(fill = "white", shape = 21, color="cornflowerblue", size = 1) +
+        geom_point(data = vals$missingPoints0, color = "red", fill = "red", 
+                   size = 1, shape = 21) 
     } 
     
     plot1 = plot1 + 
-        geom_point(data=vals$otherMarkedPoints, color="violetred", size=1, fill="violetred",shape=21) +
-        geom_point(data=vals$markedPoints, color="red", size=2.5, fill="red",shape=21) 
+      geom_point(data = vals$otherMarkedPoints, color = "violetred", size = 1, 
+                 fill = "violetred", shape = 21) +
+      geom_point(data = vals$markedPoints, color="red", size = 2.5, fill = "red",
+                 shape = 21) 
     
     plot1
   })
   
+  
+  
+  # rendering cyclic plot
   output$plot2 <- renderPlot({
+    
     if(vals$missing){
       plot2 <- ggplot(vals$dataSetWithNA, aes(x = year, y = sunvalue)) 
     } else {
       plot2 <- ggplot(vals$data, aes(x = year, y = sunvalue)) 
     }
+    
     plot2 = plot2 +  
-      stat_smooth(method = "lm", formula = y ~ 1, se = FALSE, colour = "red", size=0.4) +
+      stat_smooth(method = "lm", formula = y ~ 1, se = FALSE, colour = "red", 
+                  size = 0.4) +
       facet_wrap(~ factor_cycle, nrow = 1) +
       labs(x = NULL, y = "Sunvalue") +
       ggtitle("Cyclic graph") +
@@ -430,125 +493,232 @@ server <- function(input, output, session) {
             axis.text.x = element_blank(),
             axis.ticks.x = element_blank(),
             strip.background = element_rect(fill = "white")) + 
-      geom_line(color="darkseagreen", size=0.4) +
-      geom_point(fill="white", shape=21, color="cornflowerblue", size=1) 
+      geom_line(color = "darkseagreen", size = 0.4) +
+      geom_point(fill =" white", shape = 21, color = "cornflowerblue", size=1) 
       
-     if(vals$missing){
+    if (vals$missing) { 
       plot2 = plot2 +
-        geom_point(fill="white", shape=21,color="cornflowerblue", size=1) +
-        geom_point(data=vals$missingPoints1, color="burlywood",fill="burlywood", size=1, shape=21) +
-        geom_point(data=vals$missingPoints2, color="yellow3",fill="yellow3", size=1, shape=21) +
-        geom_point(data=vals$missingPoints3, color="violetred",fill="violetred", size=1, shape=21) +
-        geom_point(data=vals$missingPoints4, color="tomato",fill="tomato", size=1, shape=21) +
-        geom_point(data=vals$missingPoints5, color="green3",fill="green3", size=1, shape=21) +
-        geom_point(data=vals$missingPoints6, color="royalblue1",fill="royalblue1", size=1, shape=21) +
-        geom_point(data=vals$missingPoints7, color="cadetblue",fill="cadetblue", size=1, shape=21) +
-        geom_point(data=vals$missingPoints8, color="mediumpurple3",fill="mediumpurple3", size=1, shape=21) +
-        geom_point(data=vals$missingPoints9, color="indianred2",fill="indianred2", size=1, shape=21) +
-        geom_point(data=vals$missingPoints10, color="dodgerblue1",fill="dodgerblue1", size=1, shape=21) +
-        geom_point(data=vals$missingPoints11, color="red",fill="red", size=1, shape=21) +
-        geom_point(data=vals$missingPoints12, color="slategray4",fill="slategray4", size=1, shape=21) +
-        geom_point(data=vals$missingPoints13, color="magenta",fill="magenta", size=1, shape=21) 
+        geom_point(fill = "white", shape = 21,  color = "cornflowerblue", 
+                   size = 1) +
+        geom_point(data = vals$missingPoints1,  color = "burlywood",     
+                   fill="burlywood",       
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints2,  color = "yellow3",       
+                   fill = "yellow3",       
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints3,  color = "violetred",     
+                   fill = "violetred",     
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints4,  color = "tomato",        
+                   fill = "tomato",        
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints5,  color = "green3",        
+                   fill = "green3",        
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints6,  color = "royalblue1",    
+                   fill = "royalblue1",    
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints7,  color = "cadetblue",     
+                   fill = "cadetblue",     
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints8,  color = "mediumpurple3", 
+                   fill = "mediumpurple3", 
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints9,  color = "indianred2",    
+                   fill = "indianred2",    
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints10, color = "dodgerblue1",   
+                   fill = "dodgerblue1",   
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints11, color = "red",           
+                   fill = "red",           
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints12, color = "slategray4",    
+                   fill = "slategray4", 
+                   size = 1, shape = 21) +
+        geom_point(data = vals$missingPoints13, color = "magenta",       
+                   fill = "magenta", 
+                   size = 1, shape = 21) 
       
       
-      if(input$display_method == "Error Boundaries (for Multiple Imp.)"){
+      if (input$display_method == "Error Boundaries (for Multiple Imp.)") {
         if(!(nrow(vals$method14points$one) == 0 && 
            nrow(vals$method15points$one) == 0 &&  
            nrow(vals$method16points$one) == 0 )){
             plot2 = plot2 + 
-              geom_segment(data=vals$errorSegments[[1]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+ 
-              geom_segment(data=vals$errorSegments[[2]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-              geom_segment(data=vals$errorSegments[[3]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-              geom_segment(data=vals$errorSegments[[4]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+
-              geom_segment(data=vals$errorSegments[[5]], aes(x=x,y=y,yend=yend,xend=xend,color=color),size=1)+ 
-              geom_point(data=vals$errorBoundaryPoints)  
+              geom_segment(data = vals$errorSegments[[1]], 
+                           aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                           size = 1) + 
+              geom_segment(data = vals$errorSegments[[2]], 
+                           aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                           size = 1) +
+              geom_segment(data = vals$errorSegments[[3]], 
+                           aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                           size = 1) +
+              geom_segment(data = vals$errorSegments[[4]], 
+                           aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                           size = 1) +
+              geom_segment(data = vals$errorSegments[[5]], 
+                           aes(x = x, y = y, yend = yend, xend = xend, color = color),
+                           size = 1) + 
+              geom_point(data = vals$errorBoundaryPoints)  
         }
       }
       
     } else {
       plot2 = plot2 + 
-        geom_point(data=vals$missingPoints0, color="red",fill="red", size=1.5, shape=21) 
+        geom_point(data = vals$missingPoints0, color = "red", fill = "red", 
+                   size = 1.5, shape = 21) 
     }
    
     plot2 = plot2 + 
-      geom_point(data=vals$markedPoints, color="red", size=2.5, fill="red",shape=21) 
+      geom_point(data = vals$markedPoints, color = "red", size = 2.5, 
+                 fill = "red", shape = 21) 
     
     plot2
   }) 
   
-  observeEvent(input$generateMissingValues, {
-    vals$missingIndices <- sort(sample(1:nrow(sun_df),5))
-    vals$missing = TRUE
-    vals$valuesDeleted = TRUE
-    vals$dataSetWithNA <- vals$data
-    vals$missingPoints0 <- vals$emptyFrame
-    vals$missingPoints0 <- vals$dataSetWithNA[vals$missingIndices,]
-    vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+  
+  #----------------
+  # Event handlers
+  #----------------
+  
+  # click on linear graph
+  observeEvent(input$plot1_click,{
+    nearpoint <- nearPoints(vals$data, input$plot1_click, xvar = "year", 
+                            yvar="sunvalue", threshold = 5, maxpoints = 1)
     
-    vals$missingPoints1 <- vals$emptyFrame
-    vals$missingPoints2 <- vals$emptyFrame
-    vals$missingPoints3 <- vals$emptyFrame
-    vals$missingPoints4 <- vals$emptyFrame
-    vals$missingPoints5 <- vals$emptyFrame
-    vals$missingPoints6 <- vals$emptyFrame
-    vals$missingPoints7 <- vals$emptyFrame
-    vals$missingPoints8 <- vals$emptyFrame
-    vals$missingPoints9 <- vals$emptyFrame
-    vals$missingPoints10 <- vals$emptyFrame
-    vals$missingPoints11 <- vals$emptyFrame
-    vals$missingPoints12 <- vals$emptyFrame
-    vals$missingPoints13 <- vals$emptyFrame
-    vals$method14points$one <- vals$emptyFrame
-    vals$method14points$two <- vals$emptyFrame
+    if (nrow(nearpoint) != 0) {
+      vals$markedPoints      <- vals$markedPoints[0, ]
+      vals$otherMarkedPoints <- vals$data[factor_cycle == nearpoint$factor_cycle, ]
+      vals$markedPoints      <- rbind(vals$markedPoints, data.frame(
+                                                    year = nearpoint$year,
+                                                    sunvalue = nearpoint$sunvalue,
+                                                    factor_cycle = 
+                                                      nearpoint$factor_cycle))
+    } else {
+      vals$markedPoints <- vals$markedPoints[0, ]
+      vals$otherMarkedPoints <- vals$otherMarkedPoints[0, ]
+    }
+  })
+  
+  # click on cyclic graph
+  observeEvent(input$plot2_click, {
+    nearpoint <- nearPoints(vals$data,input$plot2_click, xvar = "year", 
+                            yvar="sunvalue", threshold = 5, maxpoints = 1)
+    
+    if (nrow(nearpoint) != 0) {
+      vals$markedPoints      <- vals$markedPoints[0, ]
+      vals$otherMarkedPoints <- vals$data[factor_cycle == nearpoint$factor_cycle, ]
+      vals$markedPoints      <- rbind(vals$markedPoints, data.frame(
+                                                    year = nearpoint$year,
+                                                    sunvalue = nearpoint$sunvalue,
+                                                    factor_cycle = 
+                                                      nearpoint$factor_cycle))
+    }
+  })
+  
+  # double click on linear graph
+  observeEvent(input$plot1_dblclick, {
+    brush <- input$plot1_brush
+    
+    if (!is.null(brush)) {
+      vals$xGraph1 <- c(brush$xmin, brush$xmax)
+      vals$yGraph1 <- c(brush$ymin, brush$ymax)
+      
+    } else {
+      vals$xGraph1 <- NULL
+      vals$yGraph1 <- NULL
+    }
+  })
+  
+  # double click on cyclic graph
+  observeEvent(input$plot2_dblclick, {
+    brush <- input$plot1_brush
+    
+    if (!is.null(brush)) {
+      vals$xGraph2 <- c(brush$xmin, brush$xmax)
+      vals$yGraph2 <- c(brush$ymin, brush$ymax)
+    } else {
+      vals$xGraph2 <- NULL
+      vals$yGraph2 <- NULL
+    }
+  })
+  
+  # button generate missing values
+  observeEvent(input$generateMissingValues, {
+    vals$missingIndices <- sort(sample(1:nrow(sun_df), 5))
+    vals$missing       = TRUE
+    vals$valuesDeleted = TRUE
+    vals$dataSetWithNA  <- vals$data
+    vals$missingPoints0 <- vals$emptyFrame
+    vals$missingPoints0 <- vals$dataSetWithNA[vals$missingIndices, ]
+    vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
+    
+    vals$missingPoints1       <- vals$emptyFrame
+    vals$missingPoints2       <- vals$emptyFrame
+    vals$missingPoints3       <- vals$emptyFrame
+    vals$missingPoints4       <- vals$emptyFrame
+    vals$missingPoints5       <- vals$emptyFrame
+    vals$missingPoints6       <- vals$emptyFrame
+    vals$missingPoints7       <- vals$emptyFrame
+    vals$missingPoints8       <- vals$emptyFrame
+    vals$missingPoints9       <- vals$emptyFrame
+    vals$missingPoints10      <- vals$emptyFrame
+    vals$missingPoints11      <- vals$emptyFrame
+    vals$missingPoints12      <- vals$emptyFrame
+    vals$missingPoints13      <- vals$emptyFrame
+    vals$method14points$one   <- vals$emptyFrame
+    vals$method14points$two   <- vals$emptyFrame
     vals$method14points$three <- vals$emptyFrame
-    vals$method14points$four <- vals$emptyFrame
-    vals$method14points$five <- vals$emptyFrame
+    vals$method14points$four  <- vals$emptyFrame
+    vals$method14points$five  <- vals$emptyFrame
     
     #Default Imputation (mean)
     vals$dataSetWithNA$sunvalue = na.mean(vals$dataSetWithNA$sunvalue)
-    vals$missingPoints11 = vals$dataSetWithNA[vals$missingIndices,]
+    vals$missingPoints11 = vals$dataSetWithNA[vals$missingIndices, ]
   
-    vals$group1 <- vals$data[c(1:vals$missingIndices[1]-1),]
-    vals$group2 <- vals$data[c(((vals$missingIndices[1])+1):((vals$missingIndices[2])-1)),]
-    vals$group3 <- vals$data[c(((vals$missingIndices[2])+1):((vals$missingIndices[3])-1)),]
-    vals$group4 <- vals$data[c(((vals$missingIndices[3])+1):((vals$missingIndices[4])-1)),]
-    vals$group5 <- vals$data[c(((vals$missingIndices[4])+1):((vals$missingIndices[5])-1)),]
-    vals$group6 <- vals$data[c(((vals$missingIndices[5])+1):length(vals$data$year)),]
+    vals$group1 <- vals$data[c(1:vals$missingIndices[1] - 1), ]
+    vals$group2 <- vals$data[c(((vals$missingIndices[1]) + 1):((vals$missingIndices[2]) - 1)), ]
+    vals$group3 <- vals$data[c(((vals$missingIndices[2]) + 1):((vals$missingIndices[3]) - 1)), ]
+    vals$group4 <- vals$data[c(((vals$missingIndices[3]) + 1):((vals$missingIndices[4]) - 1)), ]
+    vals$group5 <- vals$data[c(((vals$missingIndices[4]) + 1):((vals$missingIndices[5]) - 1)), ]
+    vals$group6 <- vals$data[c(((vals$missingIndices[5]) + 1):length(vals$data$year)), ]
     
     updateCheckboxInput(session, "method11", value = TRUE)
   })
   
+  # button toggle
   observeEvent(input$toggle, {
     vals$missing = ifelse(vals$missing,FALSE,TRUE)
   })
   
+  
+  # button impute
   observeEvent(input$imputeAction, {
-    
-    if(vals$missing && vals$valuesDeleted){
-      
-      if(input$method1==FALSE && input$method2==FALSE &&
-          input$method3==FALSE && input$method4==FALSE &&
-          input$method5==FALSE && input$method6==FALSE &&
-          input$method7==FALSE && input$method8==FALSE &&
-          input$method9==FALSE && input$method10==FALSE &&
-          input$method11==FALSE && input$method12==FALSE &&
-          input$method13==FALSE && input$method14==FALSE &&
-          input$method15==FALSE){
+    if (vals$missing && vals$valuesDeleted) {
+      if (input$method1 == FALSE &&  input$method2 == FALSE &&
+          input$method3 == FALSE &&  input$method4 == FALSE &&
+          input$method5 == FALSE &&  input$method6 == FALSE &&
+          input$method7 == FALSE &&  input$method8 == FALSE &&
+          input$method9 == FALSE &&  input$method10 == FALSE &&
+          input$method11 == FALSE && input$method12 == FALSE &&
+          input$method13 == FALSE && input$method14 == FALSE &&
+          input$method15 == FALSE) {
         updateCheckboxInput(session, "method11", value = TRUE)
-        showNotification(session=session,"No imputation method chosen 
+        showNotification(session = session, "No imputation method chosen 
                          ('Mean' chosen as default)",
-                         type="warning")
+                         type = "warning")
       } else {
-
-        vals$missingPoints1 <- vals$emptyFrame
-        vals$missingPoints2 <- vals$emptyFrame
-        vals$missingPoints3 <- vals$emptyFrame
-        vals$missingPoints4 <- vals$emptyFrame
-        vals$missingPoints5 <- vals$emptyFrame
-        vals$missingPoints6 <- vals$emptyFrame
-        vals$missingPoints7 <- vals$emptyFrame
-        vals$missingPoints8 <- vals$emptyFrame
-        vals$missingPoints9 <- vals$emptyFrame
+        vals$missingPoints1  <- vals$emptyFrame
+        vals$missingPoints2  <- vals$emptyFrame
+        vals$missingPoints3  <- vals$emptyFrame
+        vals$missingPoints4  <- vals$emptyFrame
+        vals$missingPoints5  <- vals$emptyFrame
+        vals$missingPoints6  <- vals$emptyFrame
+        vals$missingPoints7  <- vals$emptyFrame
+        vals$missingPoints8  <- vals$emptyFrame
+        vals$missingPoints9  <- vals$emptyFrame
         vals$missingPoints10 <- vals$emptyFrame
         vals$missingPoints11 <- vals$emptyFrame
         vals$missingPoints12 <- vals$emptyFrame
@@ -556,189 +726,213 @@ server <- function(input, output, session) {
         method14chosen = input$method14
         method15chosen = input$method15
         method16chosen = input$method16
-        vals$method14points$one <- vals$emptyFrame
-        vals$method14points$two <- vals$emptyFrame
+        vals$method14points$one   <- vals$emptyFrame
+        vals$method14points$two   <- vals$emptyFrame
         vals$method14points$three <- vals$emptyFrame
-        vals$method14points$four <- vals$emptyFrame
-        vals$method14points$five <- vals$emptyFrame
-        vals$method14 <- list(one<-vals$emptyFrame, 
-                         two<-vals$emptyFrame,
-                         three<-vals$emptyFrame,
-                         four<-vals$emptyFrame,
-                         five<-vals$emptyFrame)
-        vals$method15points$one <- vals$emptyFrame
-        vals$method15points$two <- vals$emptyFrame
+        vals$method14points$four  <- vals$emptyFrame
+        vals$method14points$five  <- vals$emptyFrame
+        vals$method14 <- list(one <- vals$emptyFrame, 
+                              two   <- vals$emptyFrame,
+                              three <- vals$emptyFrame,
+                              four  <- vals$emptyFrame,
+                              five  <- vals$emptyFrame)
+        vals$method15points$one   <- vals$emptyFrame
+        vals$method15points$two   <- vals$emptyFrame
         vals$method15points$three <- vals$emptyFrame
-        vals$method15points$four <- vals$emptyFrame
-        vals$method15points$five <- vals$emptyFrame
-        vals$method15 <- list(one<-vals$emptyFrame, 
-                              two<-vals$emptyFrame,
-                              three<-vals$emptyFrame,
-                              four<-vals$emptyFrame,
+        vals$method15points$four  <- vals$emptyFrame
+        vals$method15points$five  <- vals$emptyFrame
+        vals$method15 <- list(one   <- vals$emptyFrame, 
+                              two   <- vals$emptyFrame,
+                              three <- vals$emptyFrame,
+                              four  <- vals$emptyFrame,
                               five<-vals$emptyFrame)
-        vals$method16points$one <- vals$emptyFrame
-        vals$method16points$two <- vals$emptyFrame
+        vals$method16points$one   <- vals$emptyFrame
+        vals$method16points$two   <- vals$emptyFrame
         vals$method16points$three <- vals$emptyFrame
-        vals$method16points$four <- vals$emptyFrame
-        vals$method16points$five <- vals$emptyFrame
-        vals$method16 <- list(one<-vals$emptyFrame, 
-                              two<-vals$emptyFrame,
-                              three<-vals$emptyFrame,
-                              four<-vals$emptyFrame,
-                              five<-vals$emptyFrame)
+        vals$method16points$four  <- vals$emptyFrame
+        vals$method16points$five  <- vals$emptyFrame
+        vals$method16 <- list(one   <- vals$emptyFrame, 
+                              two   <- vals$emptyFrame,
+                              three <- vals$emptyFrame,
+                              four  <- vals$emptyFrame,
+                              five  <- vals$emptyFrame)
         
         vals$dataSetWithNA <- vals$data
-        vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
         
         #Imputation
-        if(input$method1){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method1) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.interpolation(vals$dataSetWithNA$sunvalue,
-                                                         option="linear")
-          vals$missingPoints1 = vals$dataSetWithNA[vals$missingIndices,]
+                                                         option = "linear")
+          vals$missingPoints1 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method2){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method2) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.interpolation(vals$dataSetWithNA$sunvalue,
-                                                         option="spline")
-          vals$missingPoints2 = vals$dataSetWithNA[vals$missingIndices,]
+                                                         option = "spline")
+          vals$missingPoints2 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method3){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method3) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.interpolation(vals$dataSetWithNA$sunvalue,
-                                                         option="stine")
-          vals$missingPoints3 = vals$dataSetWithNA[vals$missingIndices,]
+                                                         option = "stine")
+          vals$missingPoints3 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method4){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method4) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.kalman(vals$dataSetWithNA$sunvalue,
-                                                         model="StructTS")
-          vals$missingPoints4 = vals$dataSetWithNA[vals$missingIndices,]
+                                                  model = "StructTS")
+          vals$missingPoints4 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method5){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method5) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.kalman(vals$dataSetWithNA$sunvalue,
-                                                         model="auto.arima")
-          vals$missingPoints5 = vals$dataSetWithNA[vals$missingIndices,]
+                                                  model="auto.arima")
+          vals$missingPoints5 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method6){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method6) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.locf(vals$dataSetWithNA$sunvalue,
-                                                         option="locf")
-          vals$missingPoints6 = vals$dataSetWithNA[vals$missingIndices,]
+                                                option = "locf")
+          vals$missingPoints6 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method7){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method7) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.locf(vals$dataSetWithNA$sunvalue,
-                                                         option="nocb")
+                                                option = "nocb")
           vals$missingPoints7 = vals$dataSetWithNA[vals$missingIndices,]
         }
         
-        if(input$method8){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method8) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.ma(vals$dataSetWithNA$sunvalue,
-                                              weighting="simple")
-          vals$missingPoints8 = vals$dataSetWithNA[vals$missingIndices,]
+                                              weighting = "simple")
+          vals$missingPoints8 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method9){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method9) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.ma(vals$dataSetWithNA$sunvalue,
-                                              weighting="linear")
-          vals$missingPoints9 = vals$dataSetWithNA[vals$missingIndices,]
+                                              weighting = "linear")
+          vals$missingPoints9 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method10){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method10) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.ma(vals$dataSetWithNA$sunvalue,
-                                              weighting="exponential")
-          vals$missingPoints10 = vals$dataSetWithNA[vals$missingIndices,]
+                                              weighting = "exponential")
+          vals$missingPoints10 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method11){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method11) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.mean(vals$dataSetWithNA$sunvalue,
-                                                         option="mean")
-          vals$missingPoints11 = vals$dataSetWithNA[vals$missingIndices,]
+                                                option = "mean")
+          vals$missingPoints11 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method12){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method12) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.mean(vals$dataSetWithNA$sunvalue,
-                                                         option="median")
-          vals$missingPoints12 = vals$dataSetWithNA[vals$missingIndices,]
+                                                option = "median")
+          vals$missingPoints12 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method13){
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
+        if (input$method13) {
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.mean(vals$dataSetWithNA$sunvalue,
-                                                         option="mode")
-          vals$missingPoints13 = vals$dataSetWithNA[vals$missingIndices,]
+                                                option = "mode")
+          vals$missingPoints13 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
-        if(input$method14){
+        if (input$method14) {
           vals$method14chosen = TRUE
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
-          combined <- invisible(mice(vals$dataSetWithNA, m=10, method="pmm", maxit=10, printFlag = FALSE))
-          vals$method14 <- mapply(function(df,index) {
-            for(i in 1:10){
-              df <- rbind(df,complete(combined,i)[vals$missingIndices[index],])
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
+          combined <- invisible(mice(vals$dataSetWithNA, m = 10, method = "pmm", 
+                                     maxit = 10, printFlag = FALSE))
+          vals$method14 <- mapply(function(df, index) {
+            for (i in 1:10) {
+              df <- rbind(df, complete(combined, i)[vals$missingIndices[index], ])
             }
             df$year=df$year - 0.6
-            if(index==1){vals$method14points$one <- df}
-            if(index==2){vals$method14points$two <- df}
-            if(index==3){vals$method14points$three <- df}
-            if(index==4){vals$method14points$four <- df}
-            if(index==5){vals$method14points$five <- df}
-          },vals$method14, seq_along(vals$method14))
-
+            if (index == 1) {vals$method14points$one   <- df}
+            if (index == 2) {vals$method14points$two   <- df}
+            if (index == 3) {vals$method14points$three <- df}
+            if (index == 4) {vals$method14points$four  <- df}
+            if (index == 5) {vals$method14points$five  <- df}
+          }, 
+          vals$method14, 
+          seq_along(vals$method14))
         }
         
-        if(input$method15){
+        if (input$method15) {
           vals$method15chosen = TRUE
-          vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
-          combined <- invisible(mice(vals$dataSetWithNA, m=10, method="rf", maxit=10, printFlag = FALSE))
-          vals$method15 <- mapply(function(df,index) {
-            for(i in 1:10){
-              df <- rbind(df,complete(combined,i)[vals$missingIndices[index],])
+          vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
+          combined <- invisible(mice(vals$dataSetWithNA, m = 10, method = "rf", 
+                                     maxit = 10, printFlag = FALSE))
+          vals$method15 <- mapply(function(df, index) {
+            for (i in 1:10) {
+              df <- rbind(df, complete(combined, i)[vals$missingIndices[index], ])
             }
-            if(index==1){vals$method15points$one <- df}
-            if(index==2){vals$method15points$two <- df}
-            if(index==3){vals$method15points$three <- df}
-            if(index==4){vals$method15points$four <- df}
-            if(index==5){vals$method15points$five <- df}
-          },vals$method15, seq_along(vals$method15))
-
+            
+            if (index == 1) {vals$method15points$one   <- df}
+            if (index == 2) {vals$method15points$two   <- df}
+            if (index == 3) {vals$method15points$three <- df}
+            if (index == 4) {vals$method15points$four  <- df}
+            if (index == 5) {vals$method15points$five  <- df}
+          },
+          vals$method15, 
+          seq_along(vals$method15))
         }
         
-        if(input$method16){
+        if (input$method16) {
           vals$method16chosen = TRUE
           vals$dataSetWithNA[vals$missingIndices,]$sunvalue = NA
-          combined <- invisible(mice(vals$dataSetWithNA, m=10, method="quadratic", maxit=10, printFlag = FALSE))
-          vals$method16 <- mapply(function(df,index) {
-            for(i in 1:10){
-              df <- rbind(df,complete(combined,i)[vals$missingIndices[index],])
+          combined <- invisible(mice(vals$dataSetWithNA, m = 10, method = "quadratic",
+                                     maxit = 10, printFlag = FALSE))
+          vals$method16 <- mapply(function(df, index) {
+            for (i in 1:10) {
+              df <- rbind(df, complete(combined, i)[vals$missingIndices[index], ])
             }
+            
             df$year=df$year + 0.6
-            if(index==1){vals$method16points$one <- df}
-            if(index==2){vals$method16points$two <- df}
-            if(index==3){vals$method16points$three <- df}
-            if(index==4){vals$method16points$four <- df}
-            if(index==5){vals$method16points$five <- df}
-          },vals$method16, seq_along(vals$method16))
+            
+            if (index == 1) {vals$method16points$one   <- df}
+            if (index == 2) {vals$method16points$two   <- df}
+            if (index == 3) {vals$method16points$three <- df}
+            if (index == 4) {vals$method16points$four  <- df}
+            if (index == 5) {vals$method16points$five  <- df}
+          },
+          vals$method16, 
+          seq_along(vals$method16))
         }
       }
-      
     } else {
-      showNotification(session=session,type="message","Please delete values first (or toggle to imputed)")
+      showNotification(session = session, type = "message", 
+                       "Please delete values first (or toggle to imputed)")
     }
+  })
+  
+  output$imp_method <- renderText({
+    paste("Single Value Imputation Methods")
+  })
+  
+  output$imp2_method <- renderText({
+    paste("Multiple Imputation Methods")
+  })
+  
+  output$info <- renderText({
+    stringi::stri_join_list(c("Marked point:", vals$markedPoints))
+    
   })
 }
 
+# give objects to Shiny 
 shinyApp(ui = ui, server = server)
