@@ -187,11 +187,14 @@ server <- function(input, output, session) {
   # render linear plot 
   output$plot1 <- renderPlot({
     
+    # baseline
     if (vals$missing) {
       plot1 <- ggplot(vals$dataSetWithNA, aes(x = year, y = sunvalue)) 
     } else {
       plot1 <- ggplot(vals$data, aes(x = year, y = sunvalue)) 
     }
+    
+    # theme
     plot1 = plot1 +
       labs(x = "Year", y = "Sunvalue") +
       ggtitle("Sunspot cycles\n\nLinear graph") +
@@ -203,11 +206,12 @@ server <- function(input, output, session) {
             plot.title = element_text(size = rel(1.5), face = "bold", vjust = 1.5),
             strip.background = element_rect(fill = "white"))  
     
-    
+    # when points deleted
     if (vals$missing) {
       printErrorBoundaryPoints = FALSE
       temp <- vals$data[-vals$missingIndices, ]
       
+      # error boundaries
       if (input$display_method == "Error Boundaries (for Multiple Imp.)") {
         if (nrow(vals$method14points$one) == 0 && 
            nrow(vals$method15points$one) == 0 &&  
@@ -215,6 +219,9 @@ server <- function(input, output, session) {
           showNotification(session = session, "Error Boundaries require a Multiple 
                            Imp. method to be chosen AND imputed", type="warning")
         } else {
+          
+          # add min and max imputed points (of mult. imp) of all missing vals for 
+          # error range segments
           printErrorBoundaryPoints = TRUE
           errorBoundaryPoints <- vals$emptyFrame[0, ]
           errorBoundaryPoints <- rbind(errorBoundaryPoints, data.frame(
@@ -272,6 +279,7 @@ server <- function(input, output, session) {
           vals$errorBoundaryPoints <- errorBoundaryPoints
         }
         
+        # draw lines inbetween missing points
         plot1 = plot1 +
           geom_line(data = vals$group1, color = "grey30", size = 0.4) +
           geom_line(data = vals$group2, color = "grey30", size = 0.4) +
@@ -281,7 +289,8 @@ server <- function(input, output, session) {
           geom_line(data = vals$group6, color = "grey30", size = 0.4) +
           geom_point(data = temp, fill = "white", shape = 21, 
                      color = "cornflowerblue", size = 1) 
-             
+        
+        # create error boundary segments 
         if (printErrorBoundaryPoints) {
           segment1 = data.frame(x = vals$data[vals$missingIndices[1], ]$year,
                                 y = min(vals$method14points$one$sunvalue, 
@@ -345,6 +354,7 @@ server <- function(input, output, session) {
                                 lineend = "round",
                                 factor_cycle = vals$data[vals$missingIndices[5], ]$
                                                factor_cycle)
+          # add error boundaries to graph
           plot1 = plot1 + 
             geom_segment(data = segment1, lineend = "round", 
                          aes(x = x, y = y, yend = yend, xend = xend, color = color),
@@ -371,6 +381,10 @@ server <- function(input, output, session) {
         }
         
       } else {
+        
+        # if box plots chosen
+        
+        # draw box plots
         if (vals$method14chosen) {
           plot1 = plot1 + 
             geom_boxplot(data = vals$method14points$one,   color = "blue", 
@@ -413,6 +427,7 @@ server <- function(input, output, session) {
                          width = 0.3, size = 0.3, outlier.size = 0.7) 
         }
         
+        # add single imputation values to graph
         plot1 = plot1 +
           geom_line(data = vals$group1, color = "grey30", size = 0.4) +
           geom_line(data = vals$group2, color = "grey30", size = 0.4) +
@@ -449,6 +464,8 @@ server <- function(input, output, session) {
                      fill = "magenta", size = 1, shape = 21) 
       }
     } else {
+      
+      # if no vals missnig (not deleted yet)
       plot1 = plot1 + 
         geom_line(color = "grey30", size = 0.4)  +
         geom_point(fill = "white", shape = 21, color="cornflowerblue", size = 1) +
@@ -456,6 +473,7 @@ server <- function(input, output, session) {
                    size = 1, shape = 21) 
     } 
     
+    # points highlighted by mouse click
     plot1 = plot1 + 
       geom_point(data = vals$otherMarkedPoints, color = "violetred", size = 1, 
                  fill = "violetred", shape = 21) +
@@ -465,17 +483,19 @@ server <- function(input, output, session) {
     plot1
   })
   
-  
+  #------- plot 2 -------
   
   # rendering cyclic plot
   output$plot2 <- renderPlot({
     
+    # baseline
     if(vals$missing){
       plot2 <- ggplot(vals$dataSetWithNA, aes(x = year, y = sunvalue)) 
     } else {
       plot2 <- ggplot(vals$data, aes(x = year, y = sunvalue)) 
     }
     
+    # setting up cyclic chart (with means)
     plot2 = plot2 +  
       stat_smooth(method = "lm", formula = y ~ 1, se = FALSE, colour = "red", 
                   size = 0.4) +
@@ -496,6 +516,7 @@ server <- function(input, output, session) {
       geom_line(color = "darkseagreen", size = 0.4) +
       geom_point(fill =" white", shape = 21, color = "cornflowerblue", size=1) 
       
+    # if values deleted, draw single imp points
     if (vals$missing) { 
       plot2 = plot2 +
         geom_point(fill = "white", shape = 21,  color = "cornflowerblue", 
@@ -540,7 +561,7 @@ server <- function(input, output, session) {
                    fill = "magenta", 
                    size = 1, shape = 21) 
       
-      
+      # draw error boundaries if selected
       if (input$display_method == "Error Boundaries (for Multiple Imp.)") {
         if(!(nrow(vals$method14points$one) == 0 && 
            nrow(vals$method15points$one) == 0 &&  
@@ -588,6 +609,7 @@ server <- function(input, output, session) {
     nearpoint <- nearPoints(vals$data, input$plot1_click, xvar = "year", 
                             yvar="sunvalue", threshold = 5, maxpoints = 1)
     
+    # add clicked point to markedPoints for rendering
     if (nrow(nearpoint) != 0) {
       vals$markedPoints      <- vals$markedPoints[0, ]
       vals$otherMarkedPoints <- vals$data[factor_cycle == nearpoint$factor_cycle, ]
@@ -655,6 +677,7 @@ server <- function(input, output, session) {
     vals$missingPoints0 <- vals$dataSetWithNA[vals$missingIndices, ]
     vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
     
+    # reset 
     vals$missingPoints1       <- vals$emptyFrame
     vals$missingPoints2       <- vals$emptyFrame
     vals$missingPoints3       <- vals$emptyFrame
@@ -685,6 +708,7 @@ server <- function(input, output, session) {
     vals$group5 <- vals$data[c(((vals$missingIndices[4]) + 1):((vals$missingIndices[5]) - 1)), ]
     vals$group6 <- vals$data[c(((vals$missingIndices[5]) + 1):length(vals$data$year)), ]
     
+    # mean imputation
     updateCheckboxInput(session, "method11", value = TRUE)
   })
   
@@ -697,6 +721,8 @@ server <- function(input, output, session) {
   # button impute
   observeEvent(input$imputeAction, {
     if (vals$missing && vals$valuesDeleted) {
+      
+      # show notification if no method selected
       if (input$method1 == FALSE &&  input$method2 == FALSE &&
           input$method3 == FALSE &&  input$method4 == FALSE &&
           input$method5 == FALSE &&  input$method6 == FALSE &&
@@ -710,6 +736,8 @@ server <- function(input, output, session) {
                          ('Mean' chosen as default)",
                          type = "warning")
       } else {
+        
+        # reset 
         vals$missingPoints1  <- vals$emptyFrame
         vals$missingPoints2  <- vals$emptyFrame
         vals$missingPoints3  <- vals$emptyFrame
@@ -760,7 +788,7 @@ server <- function(input, output, session) {
         vals$dataSetWithNA <- vals$data
         vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
         
-        #Imputation
+        #Imputation (1 to 13 are single imp methods)
         if (input$method1) {
           vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
           vals$dataSetWithNA$sunvalue = na.interpolation(vals$dataSetWithNA$sunvalue,
@@ -852,6 +880,7 @@ server <- function(input, output, session) {
           vals$missingPoints13 = vals$dataSetWithNA[vals$missingIndices, ]
         }
         
+        # Multiple imp methods
         if (input$method14) {
           vals$method14chosen = TRUE
           vals$dataSetWithNA[vals$missingIndices, ]$sunvalue = NA
@@ -928,6 +957,7 @@ server <- function(input, output, session) {
     paste("Multiple Imputation Methods")
   })
   
+  # render details of point selected by mouse into text
   output$info <- renderText({
     stringi::stri_join_list(c("Marked point:", vals$markedPoints))
     
